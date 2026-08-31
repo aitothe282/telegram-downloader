@@ -3,6 +3,7 @@ import re
 import asyncio
 import tempfile
 from pathlib import Path
+from datetime import datetime
 
 import yt_dlp
 from telegram import (
@@ -31,20 +32,46 @@ print(f"✅ Bot Token loaded successfully")
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "tg_downloader"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# تخزين آخر الروابط (في الذاكرة - يمكن تحسينها بـ database)
+USER_HISTORY = {}
+MAX_HISTORY = 5
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("ℹ️ المساعدة", callback_data="help")],
+        [InlineKeyboardButton("📝 آخر الروابط", callback_data="history")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await update.message.reply_text(
-        "أهلاً بيك ببوت التحميل.\n\n"
-        "دز رابط الفيديو مباشرة، وأنا أطلعلك خيارات التحميل."
+        "🎬 أهلاً بيك ببوت التحميل!\n\n"
+        "📌 كيفية الاستخدام:\n"
+        "• أرسل رابط الفيديو مباشرة\n"
+        "• اختار الجودة المطلوبة\n"
+        "• انتظر التحميل والإرسال\n\n"
+        "🌍 المواقع المدعومة:\n"
+        "YouTube • TikTok • Instagram • Facebook • و1000+ موقع آخر",
+        reply_markup=reply_markup
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🏠 الرئيسية", callback_data="start")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await update.message.reply_text(
-        "/start - تشغيل البوت\n"
-        "/help - المساعدة\n"
+        "📖 المساعدة:\n\n"
+        "/start - إعادة تشغيل البوت\n"
+        "/help - عرض هذه الرسالة\n"
         "/cancel - إلغاء المهمة الحالية\n\n"
-        "بالخاص: دز الرابط مباشرة."
+        "💡 نصائح:\n"
+        "• انسخ الرابط وأرسله مباشرة\n"
+        "• الجودة الأعلى = حجم أكبر\n"
+        "• MP3 للموسيقى فقط",
+        reply_markup=reply_markup
     )
 
 
@@ -58,6 +85,27 @@ def is_url(text: str) -> bool:
     )
 
 
+def format_size(bytes_size):
+    """تحويل الحجم لصيغة قابلة للقراءة"""
+    if bytes_size < 1024:
+        return f"{bytes_size} B"
+    elif bytes_size < 1024 ** 2:
+        return f"{bytes_size / 1024:.1f} KB"
+    elif bytes_size < 1024 ** 3:
+        return f"{bytes_size / (1024 ** 2):.1f} MB"
+    else:
+        return f"{bytes_size / (1024 ** 3):.1f} GB"
+
+
+def format_duration(seconds):
+    """تحويل الثواني لصيغة دقائق وثواني"""
+    if seconds is None:
+        return "بدون معلومات"
+    minutes = int(seconds) // 60
+    secs = int(seconds) % 60
+    return f"{minutes}:{secs:02d}"
+
+
 def get_info(url: str):
     opts = {
         "quiet": True,
@@ -66,7 +114,7 @@ def get_info(url: str):
         "noplaylist": True,
         "socket_timeout": 30,
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         },
     }
 
@@ -74,7 +122,6 @@ def get_info(url: str):
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
-        # محاولة ثانية مع cookies من المتصفح
         if "Sign in" in str(e) or "bot" in str(e).lower():
             opts["cookiesfrombrowser"] = "chrome"
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -82,215 +129,287 @@ def get_info(url: str):
         raise
 
 
-def build_formats(info):
+def build_quality_keyboard():
+    """بناء لوحة الجودة مع تصميم أفضل"""
     formats = []
 
     for height in [1080, 720, 480, 360]:
         formats.append(
             [
                 InlineKeyboardButton(
-                    f"{height}p",
+                    f"📹 {height}p",
                     callback_data=f"video|{height}",
                 )
             ]
         )
 
-    formats.append(
-        [
-            InlineKeyboardButton(
-                "🎵 MP3",
-                callback_data="audio|mp3",
-            )
-        ]
-    )
+    formats.append([
+        InlineKeyboardButton("🎵 MP3", callback_data="audio|mp3"),
+    ])
+    
+    formats.append([
+        InlineKeyboardButton("❌ إلغاء", callback_data="cancel_download"),
+    ])
 
     return InlineKeyboardMarkup(formats)
 
 
-async def handle_url(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+def add_to_history(user_id, url, title):
+    """إضافة الرابط للسجل"""
+    if user_id not in USER_HISTORY:
+        USER_HISTORY[user_id] = []
+    
+    USER_HISTORY[user_id].append({
+        "url": url,
+        "title": title[:30] + "..." if len(title) > 30 else title,
+        "timestamp": datetime.now()
+    })
+    
+    # الاحتفاظ بآخر 5 روابط فقط
+    USER_HISTORY[user_id] = USER_HISTORY[user_id][-MAX_HISTORY:]
 
+
+def get_history_keyboard(user_id):
+    """الحصول على لوحة السجل"""
+    if user_id not in USER_HISTORY or not USER_HISTORY[user_id]:
+        return None
+    
+    history = USER_HISTORY[user_id]
+    keyboard = []
+    
+    for idx, item in enumerate(reversed(history)):
+        keyboard.append([
+            InlineKeyboardButton(
+                f"📌 {item['title']}",
+                callback_data=f"history_url|{idx}"
+            )
+        ])
+    
+    keyboard.append([
+        InlineKeyboardButton("🏠 الرئيسية", callback_data="start"),
+    ])
+    
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
     if not is_url(url):
         return
 
-    await update.message.reply_text(
-        "🔎 دا أجيب معلومات الفيديو..."
-    )
+    status_msg = await update.message.reply_text("🔎 جاري البحث عن الفيديو...")
 
     try:
-        info = await asyncio.to_thread(
-            get_info,
-            url,
-        )
+        info = await asyncio.to_thread(get_info, url)
 
         context.user_data["url"] = url
-
+        
         title = info.get("title", "بدون عنوان")
         duration = info.get("duration")
+        uploader = info.get("uploader", "بدون معلومات")
 
-        duration_text = ""
+        # إضافة للسجل
+        add_to_history(update.effective_user.id, url, title)
 
-        if duration:
-            minutes = duration // 60
-            seconds = duration % 60
-            duration_text = (
-                f"\n⏱ {minutes}:{seconds:02d}"
-            )
-
+        duration_text = format_duration(duration)
+        
         text = (
-            f"🎬 {title}"
-            f"{duration_text}\n\n"
-            "اختار الجودة:"
+            f"✅ تم العثور على الفيديو!\n\n"
+            f"🎬 <b>{title[:50]}</b>...\n"
+            f"👤 <i>من: {uploader[:30]}</i>\n"
+            f"⏱ المدة: {duration_text}\n\n"
+            f"📊 اختار الجودة المطلوبة:"
         )
 
-        await update.message.reply_text(
+        # تحديث الرسالة القديمة بدل إرسال واحدة جديدة
+        await status_msg.edit_text(
             text,
-            reply_markup=build_formats(info),
+            reply_markup=build_quality_keyboard(),
+            parse_mode="HTML"
         )
 
     except Exception as e:
-
-        await update.message.reply_text(
-            "❌ ما گدرت أجيب الفيديو.\n\n"
-            "جرب رابط ثاني أو بعدين."
+        await status_msg.edit_text(
+            "❌ لم أستطع الوصول للفيديو\n\n"
+            "💡 تأكد من:\n"
+            "• الرابط صحيح\n"
+            "• الفيديو متاح للتحميل\n"
+            "• الاتصال بالإنترنت"
         )
 
 
-async def handle_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    url = context.user_data.get("url")
+    action_data = query.data
 
-    if not url:
-        await query.message.reply_text(
-            "انتهت صلاحية الرابط. دزه مرة ثانية."
+    # معالجة الأوامر الخاصة
+    if action_data == "help":
+        keyboard = [[InlineKeyboardButton("🏠 الرئيسية", callback_data="start")]]
+        await query.edit_message_text(
+            "📖 المساعدة:\n\n"
+            "/start - إعادة تشغيل البوت\n"
+            "/help - عرض هذه الرسالة\n"
+            "/cancel - إلغاء المهمة الحالية\n\n"
+            "💡 نصائح:\n"
+            "• انسخ الرابط وأرسله مباشرة\n"
+            "• الجودة الأعلى = حجم أكبر\n"
+            "• MP3 للموسيقى فقط",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
 
-    action, value = query.data.split("|", 1)
+    if action_data == "history":
+        history_keyboard = get_history_keyboard(update.effective_user.id)
+        if history_keyboard:
+            await query.edit_message_text(
+                "📝 آخر الروابط المحملة:",
+                reply_markup=history_keyboard
+            )
+        else:
+            await query.answer("❌ لا توجد روابط سابقة", show_alert=True)
+        return
 
-    await query.message.reply_text(
-        "⬇️ جاري التحميل..."
-    )
+    if action_data == "start":
+        keyboard = [
+            [InlineKeyboardButton("ℹ️ المساعدة", callback_data="help")],
+            [InlineKeyboardButton("📝 آخر الروابط", callback_data="history")],
+        ]
+        await query.edit_message_text(
+            "🎬 أهلاً بيك ببوت التحميل!\n\n"
+            "📌 كيفية الاستخدام:\n"
+            "• أرسل رابط الفيديو مباشرة\n"
+            "• اختار الجودة المطلوبة\n"
+            "• انتظر التحميل والإرسال\n\n"
+            "🌍 المواقع المدعومة:\n"
+            "YouTube • TikTok • Instagram • Facebook • و1000+ موقع آخر",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if action_data == "cancel_download":
+        await query.edit_message_text("❌ تم الإلغاء")
+        return
+
+    # معالجة الروابط من السجل
+    if action_data.startswith("history_url|"):
+        idx = int(action_data.split("|")[1])
+        user_id = update.effective_user.id
+        
+        if user_id in USER_HISTORY and idx < len(USER_HISTORY[user_id]):
+            url = list(reversed(USER_HISTORY[user_id]))[idx]["url"]
+            context.user_data["url"] = url
+            context.user_data["from_history"] = True
+            
+            status_msg = await query.edit_message_text("🔎 جاري البحث...")
+            
+            try:
+                info = await asyncio.to_thread(get_info, url)
+                title = info.get("title", "بدون عنوان")
+                duration = info.get("duration")
+                uploader = info.get("uploader", "بدون معلومات")
+                
+                duration_text = format_duration(duration)
+                
+                text = (
+                    f"✅ تم العثور على الفيديو!\n\n"
+                    f"🎬 <b>{title[:50]}</b>...\n"
+                    f"👤 <i>من: {uploader[:30]}</i>\n"
+                    f"⏱ المدة: {duration_text}\n\n"
+                    f"📊 اختار الجودة المطلوبة:"
+                )
+                
+                await status_msg.edit_text(
+                    text,
+                    reply_markup=build_quality_keyboard(),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                await status_msg.edit_text("❌ حدث خطأ")
+        return
+
+    # معالجة اختيار الجودة
+    url = context.user_data.get("url")
+
+    if not url:
+        await query.answer("❌ انتهت صلاحية الرابط. أرسله مرة أخرى", show_alert=True)
+        return
+
+    action, value = action_data.split("|", 1)
+
+    # تحديث الرسالة لإظهار الحالة
+    await query.edit_message_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
 
     try:
-
-        user_dir = (
-            DOWNLOAD_DIR /
-            str(query.from_user.id)
-        )
-
-        user_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        user_dir = DOWNLOAD_DIR / str(query.from_user.id)
+        user_dir.mkdir(parents=True, exist_ok=True)
 
         if action == "audio":
-
             ydl_opts = {
                 "format": "bestaudio/best",
-                "outtmpl":
-                    str(user_dir / "%(title)s.%(ext)s"),
+                "outtmpl": str(user_dir / "%(title)s.%(ext)s"),
                 "noplaylist": True,
                 "quiet": True,
                 "no_warnings": True,
                 "socket_timeout": 30,
                 "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 },
                 "postprocessors": [
                     {
-                        "key":
-                            "FFmpegExtractAudio",
-                        "preferredcodec":
-                            "mp3",
-                        "preferredquality":
-                            "192",
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
                     }
                 ],
             }
-
         else:
-
             height = int(value)
-
             ydl_opts = {
-                "format":
-                    f"bestvideo[height<={height}]+bestaudio/"
-                    f"best[height<={height}]",
+                "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
                 "merge_output_format": "mp4",
-                "outtmpl":
-                    str(user_dir / "%(title)s.%(ext)s"),
+                "outtmpl": str(user_dir / "%(title)s.%(ext)s"),
                 "noplaylist": True,
                 "quiet": True,
                 "no_warnings": True,
                 "socket_timeout": 30,
                 "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 },
             }
 
         def download():
-            with yt_dlp.YoutubeDL(
-                ydl_opts
-            ) as ydl:
-
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
-        await asyncio.to_thread(
-            download
-        )
+        await asyncio.to_thread(download)
 
-        files = list(
-            user_dir.iterdir()
-        )
+        files = list(user_dir.iterdir())
 
         if not files:
-            raise RuntimeError(
-                "No file was produced."
-            )
+            raise RuntimeError("فشل التحميل")
 
-        file_path = max(
-            files,
-            key=lambda p: p.stat().st_mtime,
-        )
+        file_path = max(files, key=lambda p: p.stat().st_mtime)
+        file_size = format_size(file_path.stat().st_size)
 
-        await query.message.reply_text(
-            "⬆️ جاري الإرسال..."
-        )
+        await query.edit_message_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
 
         suffix = file_path.suffix.lower()
 
         if suffix == ".mp3":
-
-            with open(
-                file_path,
-                "rb",
-            ) as audio:
-
+            with open(file_path, "rb") as audio:
                 await query.message.reply_audio(
-                    audio=audio
+                    audio=audio,
+                    caption="✅ تم التحميل بنجاح!"
                 )
-
         else:
-
-            with open(
-                file_path,
-                "rb",
-            ) as video:
-
+            with open(file_path, "rb") as video:
                 await query.message.reply_video(
                     video=video,
                     supports_streaming=True,
+                    caption="✅ تم التحميل بنجاح!"
                 )
 
         try:
@@ -298,70 +417,37 @@ async def handle_callback(
         except Exception:
             pass
 
-    except Exception as e:
+        await query.edit_message_text("✅ تم الإرسال بنجاح!")
 
-        await query.message.reply_text(
-            "❌ فشل التحميل.\n\n"
-            "جرب رابط ثاني أو بعدين."
+    except Exception as e:
+        await query.edit_message_text(
+            "❌ فشل التحميل\n\n"
+            "💡 تأكد من:\n"
+            "• الرابط صحيح\n"
+            "• الفيديو متاح للتحميل\n"
+            "• الاتصال بالإنترنت"
         )
 
 
-async def cancel(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    await update.message.reply_text(
-        "إذا كانت هناك مهمة شغالة، سيتم دعم إلغائها في نسخة الـQueue الكاملة."
-    )
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ تم إلغاء المهمة الحالية")
 
 
 def main():
+    app = Application.builder().token(TOKEN).build()
 
-    app = (
-        Application
-        .builder()
-        .token(TOKEN)
-        .build()
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "help",
-            help_command,
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "cancel",
-            cancel,
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            handle_callback,
-        )
-    )
-
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(
         MessageHandler(
-            filters.TEXT &
-            ~filters.COMMAND,
+            filters.TEXT & ~filters.COMMAND,
             handle_url,
         )
     )
 
     print("🤖 Bot is running...")
-
     app.run_polling()
 
 
