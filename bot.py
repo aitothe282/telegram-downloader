@@ -64,10 +64,22 @@ def get_info(url: str):
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
+        "socket_timeout": 30,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
     }
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        return ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception as e:
+        # محاولة ثانية مع cookies من المتصفح
+        if "Sign in" in str(e) or "bot" in str(e).lower():
+            opts["cookiesfrombrowser"] = "chrome"
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        raise
 
 
 def build_formats(info):
@@ -143,7 +155,8 @@ async def handle_url(
     except Exception as e:
 
         await update.message.reply_text(
-            f"❌ ما گدرت أجيب الفيديو.\n\n{e}"
+            "❌ ما گدرت أجيب الفيديو.\n\n"
+            "جرب رابط ثاني أو بعدين."
         )
 
 
@@ -190,6 +203,10 @@ async def handle_callback(
                 "noplaylist": True,
                 "quiet": True,
                 "no_warnings": True,
+                "socket_timeout": 30,
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                },
                 "postprocessors": [
                     {
                         "key":
@@ -216,6 +233,10 @@ async def handle_callback(
                 "noplaylist": True,
                 "quiet": True,
                 "no_warnings": True,
+                "socket_timeout": 30,
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                },
             }
 
         def download():
@@ -280,7 +301,8 @@ async def handle_callback(
     except Exception as e:
 
         await query.message.reply_text(
-            f"❌ فشل التحميل.\n\n{e}"
+            "❌ فشل التحميل.\n\n"
+            "جرب رابط ثاني أو بعدين."
         )
 
 
