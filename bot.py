@@ -250,7 +250,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             # باقي المواقع: حمل فوري بدون أزرار إضافية
-            await status_msg.edit_message_text(f"⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
+            await status_msg.edit_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
             
             try:
                 user_dir = DOWNLOAD_DIR / str(update.effective_user.id)
@@ -283,7 +283,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_path = max(files, key=lambda p: p.stat().st_mtime)
                 file_size = format_size(file_path.stat().st_size)
 
-                await status_msg.edit_message_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
+                await status_msg.edit_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
 
                 suffix = file_path.suffix.lower()
 
@@ -302,11 +302,15 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
 
-                # حذف رسالة الإرسال بعد وصول المقطع
-                await status_msg.delete()
+                # حذف رسالة الحالة بعد وصول المقطع
+                try:
+                    await status_msg.delete()
+                except Exception:
+                    pass
 
             except Exception as e:
-                await status_msg.edit_message_text(
+                print(f"خطأ التحميل: {e}")
+                await status_msg.edit_text(
                     "❌ فشل التحميل\n\n"
                     "💡 تأكد من:\n"
                     "• الرابط صحيح\n"
@@ -315,6 +319,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
     except Exception as e:
+        print(f"خطأ البحث: {e}")
         await status_msg.edit_text(
             "❌ لم أستطع الوصول للفيديو\n\n"
             "💡 تأكد من:\n"
@@ -414,7 +419,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 else:
                     # حمل فوري للمواقع الأخرى
-                    await status_msg.edit_message_text(f"⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
+                    await status_msg.edit_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
                     
                     try:
                         user_dir = DOWNLOAD_DIR / str(user_id)
@@ -446,7 +451,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         file_path = max(files, key=lambda p: p.stat().st_mtime)
                         file_size = format_size(file_path.stat().st_size)
 
-                        await status_msg.edit_message_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
+                        await status_msg.edit_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
 
                         suffix = file_path.suffix.lower()
 
@@ -465,16 +470,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         except Exception:
                             pass
 
-                        await status_msg.delete()
+                        try:
+                            await status_msg.delete()
+                        except Exception:
+                            pass
 
                     except Exception as e:
-                        await status_msg.edit_message_text(
+                        await status_msg.edit_text(
                             "❌ فشل التحميل\n\n"
                             "💡 تأكد من:\n"
                             "• الرابط صحيح\n"
                             "• الفيديو متاح للتحميل"
                         )
             except Exception as e:
+                print(f"خطأ السجل: {e}")
                 await status_msg.edit_text("❌ حدث خطأ")
         return
 
@@ -489,6 +498,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # تحديث الرسالة لإظهار الحالة
     await query.edit_message_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
+    status_msg = query.message
 
     try:
         user_dir = DOWNLOAD_DIR / str(query.from_user.id)
@@ -542,16 +552,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_path = max(files, key=lambda p: p.stat().st_mtime)
         file_size = format_size(file_path.stat().st_size)
 
-        await query.edit_message_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
+        await status_msg.edit_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
 
         suffix = file_path.suffix.lower()
 
         if suffix == ".mp3":
             with open(file_path, "rb") as audio:
-                await query.message.reply_audio(audio=audio)
+                await status_msg.reply_to_message.reply_audio(audio=audio)
         else:
             with open(file_path, "rb") as video:
-                await query.message.reply_video(
+                await status_msg.reply_to_message.reply_video(
                     video=video,
                     supports_streaming=True
                 )
@@ -561,11 +571,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        # حذف رسالة الإرسال بعد وصول المقطع
-        await query.delete_message()
+        # حذف رسالة الحالة بعد وصول المقطع
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
 
     except Exception as e:
-        await query.edit_message_text(
+        print(f"خطأ التحميل: {e}")
+        await status_msg.edit_text(
             "❌ فشل التحميل\n\n"
             "💡 تأكد من:\n"
             "• الرابط صحيح\n"
