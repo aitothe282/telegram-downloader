@@ -20,11 +20,13 @@ from telegram.ext import (
 )
 
 
-TOKEN = os.getenv("8796179561:AAGSQ0c65tS3eqIBfxi9_Az1h2i1ME_PU8M")
+# تحميل التوكن من متغيرات البيئة
+TOKEN = os.getenv("BOT_TOKEN") or "8796179561:AAGSQ0c65tS3eqIBfxi9_Az1h2i1ME_PU8M"
 
-if not TOKEN:
+if not TOKEN or TOKEN == "":
     raise RuntimeError("BOT_TOKEN is missing")
 
+print(f"✅ Bot Token loaded successfully")
 
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "tg_downloader"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -336,7 +338,7 @@ def main():
         )
     )
 
-    print("Bot is running...")
+    print("🤖 Bot is running...")
 
     app.run_polling()
 
