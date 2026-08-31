@@ -32,9 +32,27 @@ print(f"✅ Bot Token loaded successfully")
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "tg_downloader"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# تخزين آخر الروابط (في الذاكرة - يمكن تحسينها بـ database)
+# تخزين آخر الروابط
 USER_HISTORY = {}
 MAX_HISTORY = 5
+
+
+def get_video_source(url: str) -> str:
+    """تحديد مصدر الفيديو"""
+    url_lower = url.lower()
+    
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        return "youtube"
+    elif "twitter.com" in url_lower or "x.com" in url_lower:
+        return "twitter"
+    elif "instagram.com" in url_lower or "instagr.am" in url_lower:
+        return "instagram"
+    elif "tiktok.com" in url_lower:
+        return "tiktok"
+    elif "facebook.com" in url_lower or "fb.watch" in url_lower:
+        return "facebook"
+    else:
+        return "other"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,10 +66,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎬 أهلاً بيك ببوت التحميل!\n\n"
         "📌 كيفية الاستخدام:\n"
         "• أرسل رابط الفيديو مباشرة\n"
-        "• اختار الجودة المطلوبة\n"
+        "• اختار الجودة (لليوتيوب وتويتر فقط)\n"
         "• انتظر التحميل والإرسال\n\n"
         "🌍 المواقع المدعومة:\n"
-        "YouTube • TikTok • Instagram • Facebook • و1000+ موقع آخر",
+        "YouTube • TikTok • Instagram • Facebook • Twitter • و1000+ موقع آخر",
         reply_markup=reply_markup
     )
 
@@ -68,8 +86,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - عرض هذه الرسالة\n"
         "/cancel - إلغاء المهمة الحالية\n\n"
         "💡 نصائح:\n"
-        "• انسخ الرابط وأرسله مباشرة\n"
-        "• الجودة الأعلى = حجم أكبر\n"
+        "• YouTube و Twitter: اختر الجودة\n"
+        "• Instagram و TikTok: جودة عالية تلقائية\n"
         "• MP3 للموسيقى فقط",
         reply_markup=reply_markup
     )
@@ -130,7 +148,7 @@ def get_info(url: str):
 
 
 def build_quality_keyboard():
-    """بناء لوحة الجودة مع تصميم أفضل"""
+    """بناء لوحة الجودة لليوتيوب وتويتر"""
     formats = []
 
     for height in [1080, 720, 480, 360]:
@@ -208,6 +226,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = info.get("title", "بدون عنوان")
         duration = info.get("duration")
         uploader = info.get("uploader", "بدون معلومات")
+        video_source = get_video_source(url)
 
         # إضافة للسجل
         add_to_history(update.effective_user.id, url, title)
@@ -219,13 +238,25 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎬 <b>{title[:50]}</b>...\n"
             f"👤 <i>من: {uploader[:30]}</i>\n"
             f"⏱ المدة: {duration_text}\n\n"
-            f"📊 اختار الجودة المطلوبة:"
         )
+
+        # تحديد ما إذا كان نحتاج لعرض خيارات الجودة
+        if video_source in ["youtube", "twitter"]:
+            text += "📊 اختار الجودة المطلوبة:"
+            keyboard = build_quality_keyboard()
+        else:
+            text += f"⚡ جودة عالية تلقائية ({video_source})"
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬇️ تحميل", callback_data="auto_quality")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_download")],
+            ])
+            # حفظ مصدر الفيديو
+            context.user_data["source"] = video_source
 
         # تحديث الرسالة القديمة بدل إرسال واحدة جديدة
         await status_msg.edit_text(
             text,
-            reply_markup=build_quality_keyboard(),
+            reply_markup=keyboard,
             parse_mode="HTML"
         )
 
@@ -254,8 +285,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/help - عرض هذه الرسالة\n"
             "/cancel - إلغاء المهمة الحالية\n\n"
             "💡 نصائح:\n"
-            "• انسخ الرابط وأرسله مباشرة\n"
-            "• الجودة الأعلى = حجم أكبر\n"
+            "• YouTube و Twitter: اختر الجودة\n"
+            "• Instagram و TikTok: جودة عالية تلقائية\n"
             "• MP3 للموسيقى فقط",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -281,10 +312,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎬 أهلاً بيك ببوت التحميل!\n\n"
             "📌 كيفية الاستخدام:\n"
             "• أرسل رابط الفيديو مباشرة\n"
-            "• اختار الجودة المطلوبة\n"
+            "• اختار الجودة (لليوتيوب وتويتر فقط)\n"
             "• انتظر التحميل والإرسال\n\n"
             "🌍 المواقع المدعومة:\n"
-            "YouTube • TikTok • Instagram • Facebook • و1000+ موقع آخر",
+            "YouTube • TikTok • Instagram • Facebook • Twitter • و1000+ موقع آخر",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -310,6 +341,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 title = info.get("title", "بدون عنوان")
                 duration = info.get("duration")
                 uploader = info.get("uploader", "بدون معلومات")
+                video_source = get_video_source(url)
                 
                 duration_text = format_duration(duration)
                 
@@ -318,19 +350,103 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🎬 <b>{title[:50]}</b>...\n"
                     f"👤 <i>من: {uploader[:30]}</i>\n"
                     f"⏱ المدة: {duration_text}\n\n"
-                    f"📊 اختار الجودة المطلوبة:"
                 )
+
+                if video_source in ["youtube", "twitter"]:
+                    text += "📊 اختار الجودة المطلوبة:"
+                    keyboard = build_quality_keyboard()
+                else:
+                    text += f"⚡ جودة عالية تلقائية ({video_source})"
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬇️ تحميل", callback_data="auto_quality")],
+                        [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_download")],
+                    ])
+                    context.user_data["source"] = video_source
                 
                 await status_msg.edit_text(
                     text,
-                    reply_markup=build_quality_keyboard(),
+                    reply_markup=keyboard,
                     parse_mode="HTML"
                 )
             except Exception as e:
                 await status_msg.edit_text("❌ حدث خطأ")
         return
 
-    # معالجة اختيار الجودة
+    # معالجة الجودة التلقائية (Instagram, TikTok, إلخ)
+    if action_data == "auto_quality":
+        url = context.user_data.get("url")
+        video_source = context.user_data.get("source", "other")
+
+        if not url:
+            await query.answer("❌ انتهت صلاحية الرابط", show_alert=True)
+            return
+
+        await query.edit_message_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
+
+        try:
+            user_dir = Path(tempfile.gettempdir()) / "tg_downloader" / str(query.from_user.id)
+            user_dir.mkdir(parents=True, exist_ok=True)
+
+            # تحميل بجودة عالية تلقائية
+            ydl_opts = {
+                "format": "best",
+                "outtmpl": str(user_dir / "%(title)s.%(ext)s"),
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "socket_timeout": 30,
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            }
+
+            def download():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
+            await asyncio.to_thread(download)
+
+            files = list(user_dir.iterdir())
+
+            if not files:
+                raise RuntimeError("فشل التحميل")
+
+            file_path = max(files, key=lambda p: p.stat().st_mtime)
+            file_size = format_size(file_path.stat().st_size)
+
+            await query.edit_message_text(f"⬆️ جاري الإرسال...\n📦 الحجم: {file_size}")
+
+            suffix = file_path.suffix.lower()
+
+            if suffix == ".mp3":
+                with open(file_path, "rb") as audio:
+                    await query.message.reply_audio(audio=audio)
+            else:
+                with open(file_path, "rb") as video:
+                    await query.message.reply_video(
+                        video=video,
+                        supports_streaming=True
+                    )
+
+            try:
+                file_path.unlink()
+            except Exception:
+                pass
+
+            # حذف رسالة الإرسال بعد وصول المقطع
+            await query.delete_message()
+
+        except Exception as e:
+            await query.edit_message_text(
+                "❌ فشل التحميل\n\n"
+                "💡 تأكد من:\n"
+                "• الرابط صحيح\n"
+                "• الفيديو متاح للتحميل\n"
+                "• الاتصال بالإنترنت"
+            )
+        return
+
+    # معالجة اختيار الجودة (YouTube و Twitter)
     url = context.user_data.get("url")
 
     if not url:
@@ -343,7 +459,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("⬇️ جاري التحميل...\n⏳ قد يستغرق دقائق")
 
     try:
-        user_dir = DOWNLOAD_DIR / str(query.from_user.id)
+        user_dir = Path(tempfile.gettempdir()) / "tg_downloader" / str(query.from_user.id)
         user_dir.mkdir(parents=True, exist_ok=True)
 
         if action == "audio":
@@ -400,16 +516,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if suffix == ".mp3":
             with open(file_path, "rb") as audio:
-                await query.message.reply_audio(
-                    audio=audio,
-                    caption="✅ تم التحميل بنجاح!"
-                )
+                await query.message.reply_audio(audio=audio)
         else:
             with open(file_path, "rb") as video:
                 await query.message.reply_video(
                     video=video,
-                    supports_streaming=True,
-                    caption="✅ تم التحميل بنجاح!"
+                    supports_streaming=True
                 )
 
         try:
@@ -417,7 +529,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        await query.edit_message_text("✅ تم الإرسال بنجاح!")
+        # حذف رسالة الإرسال بعد وصول المقطع
+        await query.delete_message()
 
     except Exception as e:
         await query.edit_message_text(
