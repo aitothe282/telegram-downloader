@@ -88,7 +88,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💡 نصائح:\n"
         "• YouTube و Twitter: اختر الجودة\n"
         "• Instagram و TikTok: تحميل فوري\n"
-        "• MP3 للموسيقى فقط",
+        "• MP3 للموسيقى فقط\n"
+        "• يدعم الصور والفيديوهات والكاروسيل",
         reply_markup=reply_markup
     )
 
@@ -105,6 +106,8 @@ def is_url(text: str) -> bool:
 
 def format_size(bytes_size):
     """تحويل الحجم لصيغة قابلة للقراءة"""
+    if bytes_size is None:
+        return "بدون معلومات"
     if bytes_size < 1024:
         return f"{bytes_size} B"
     elif bytes_size < 1024 ** 2:
@@ -112,7 +115,7 @@ def format_size(bytes_size):
     elif bytes_size < 1024 ** 3:
         return f"{bytes_size / (1024 ** 2):.1f} MB"
     else:
-        return f"{bytes_size / (1024 ** 3):.1f} GB"
+        return f"{bytes_size / (1024 ** 3):.2f} GB"
 
 
 def format_duration(seconds):
@@ -227,11 +230,17 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = info.get("title", "بدون عنوان")
         duration = info.get("duration")
         uploader = info.get("uploader", "بدون معلومات")
+        filesize = info.get("filesize")
+        
+        # التحقق من نوع المحتوى
+        is_live = info.get("is_live", False)
+        is_image = info.get("ext") in ["jpg", "png", "gif", "webp"]
 
         # إضافة للسجل
         add_to_history(update.effective_user.id, url, title)
 
         duration_text = format_duration(duration)
+        filesize_text = format_size(filesize)
 
         # إذا كان YouTube أو Twitter، اعرض خيارات الجودة
         if video_source in ["youtube", "twitter"]:
@@ -239,7 +248,8 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ تم العثور على الفيديو!\n\n"
                 f"🎬 <b>{title[:50]}</b>...\n"
                 f"👤 <i>من: {uploader[:30]}</i>\n"
-                f"⏱ المدة: {duration_text}\n\n"
+                f"⏱ المدة: {duration_text}\n"
+                f"📦 الحجم المتوقع: {filesize_text}\n\n"
                 f"📊 اختار الجودة المطلوبة:"
             )
             
@@ -256,9 +266,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_dir = DOWNLOAD_DIR / str(update.effective_user.id)
                 user_dir.mkdir(parents=True, exist_ok=True)
 
-                # تحميل بجودة عالية تلقائية
+                # تحميل بجودة عالية تلقائية مع الصوت
                 ydl_opts = {
-                    "format": "best",
+                    "format": "bestvideo+bestaudio/best",
+                    "merge_output_format": "mp4",
                     "outtmpl": str(user_dir / "%(title)s.%(ext)s"),
                     "noplaylist": True,
                     "quiet": True,
@@ -267,6 +278,13 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "http_headers": {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     },
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegConcat",
+                            "only_multi_video": True,
+                            "when": "playlist",
+                        }
+                    ],
                 }
 
                 def download():
@@ -290,6 +308,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if suffix == ".mp3":
                     with open(file_path, "rb") as audio:
                         await update.message.reply_audio(audio=audio)
+                elif suffix in [".jpg", ".png", ".gif", ".webp"]:
+                    with open(file_path, "rb") as photo:
+                        await update.message.reply_photo(photo=photo)
                 else:
                     with open(file_path, "rb") as video:
                         await update.message.reply_video(
@@ -346,7 +367,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💡 نصائح:\n"
             "• YouTube و Twitter: اختر الجودة\n"
             "• Instagram و TikTok: تحميل فوري\n"
-            "• MP3 للموسيقى فقط",
+            "• MP3 للموسيقى فقط\n"
+            "• يدعم الصور والفيديوهات والكاروسيل",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -401,15 +423,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 title = info.get("title", "بدون عنوان")
                 duration = info.get("duration")
                 uploader = info.get("uploader", "بدون معلومات")
+                filesize = info.get("filesize")
                 
                 duration_text = format_duration(duration)
+                filesize_text = format_size(filesize)
 
                 if video_source in ["youtube", "twitter"]:
                     text = (
                         f"✅ تم العثور على الفيديو!\n\n"
                         f"🎬 <b>{title[:50]}</b>...\n"
                         f"👤 <i>من: {uploader[:30]}</i>\n"
-                        f"⏱ المدة: {duration_text}\n\n"
+                        f"⏱ المدة: {duration_text}\n"
+                        f"📦 الحجم المتوقع: {filesize_text}\n\n"
                         f"📊 اختار الجودة المطلوبة:"
                     )
                     await status_msg.edit_text(
@@ -426,7 +451,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         user_dir.mkdir(parents=True, exist_ok=True)
 
                         ydl_opts = {
-                            "format": "best",
+                            "format": "bestvideo+bestaudio/best",
+                            "merge_output_format": "mp4",
                             "outtmpl": str(user_dir / "%(title)s.%(ext)s"),
                             "noplaylist": True,
                             "quiet": True,
@@ -458,6 +484,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if suffix == ".mp3":
                             with open(file_path, "rb") as audio:
                                 await query.message.reply_audio(audio=audio)
+                        elif suffix in [".jpg", ".png", ".gif", ".webp"]:
+                            with open(file_path, "rb") as photo:
+                                await query.message.reply_photo(photo=photo)
                         else:
                             with open(file_path, "rb") as video:
                                 await query.message.reply_video(
@@ -559,6 +588,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if suffix == ".mp3":
             with open(file_path, "rb") as audio:
                 await status_msg.reply_to_message.reply_audio(audio=audio)
+        elif suffix in [".jpg", ".png", ".gif", ".webp"]:
+            with open(file_path, "rb") as photo:
+                await status_msg.reply_to_message.reply_photo(photo=photo)
         else:
             with open(file_path, "rb") as video:
                 await status_msg.reply_to_message.reply_video(
