@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  telegram-downloader:
+    build: .
+    container_name: telegram-downloader-bot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/tmp/tg_downloader
